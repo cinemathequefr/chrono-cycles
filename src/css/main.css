@@ -1,0 +1,104 @@
+body {
+  font-family: "IBM Plex Sans", sans-serif;
+  margin: 0;
+}
+
+.container {
+  position: relative;
+  width: 1200px;
+  margin: 48px auto;
+  box-sizing: border-box;
+}
+
+.cycle {
+  position: relative;
+  display: block;
+  float: left;
+  width: calc(33.33% - 4px);
+  height: 140px;
+  margin: 2px;
+  padding: 4px;
+  background-color: #369;
+  color: #fff;
+  box-sizing: border-box;
+}
+
+.cycle.pinned {
+  width: calc(66.66% - 4px);
+  background-color: #936;
+  height: 400px;
+}
+
+.cycle.expo {
+  background-color: #666;
+  height: 400px;
+}
+
+.cycle.permanent {
+  background-color: #693;
+}
+
+.progress {
+  position: absolute;
+  left: 0;
+  bottom: 0;
+  width: 0;
+  height: 24px;
+  background-color: #000;
+  opacity: 0.25;
+}
+
+.title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  line-height: 1.5rem;
+}
+
+.surcycle {
+  font-size: 0.875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  line-height: 1.5rem;
+}
+
+.dates {
+  font-size: 0.938rem;
+  line-height: 1.5rem;
+}
+
+.soon {
+  position: absolute;
+  bottom: 6px;
+  right: 6px;
+  border: solid 2px #fff;
+  border-radius: 1000px;
+  width: 65px;
+  height: 65px;
+  line-height: 65px;
+  text-align: center;
+  opacity: 0.65;
+  opacity: 0.65;
+}
+
+.pinned>.soon {
+  top: 50%;
+  left: 50%;
+  width: 150px;
+  height: 150px;
+  line-height: 150px;
+  transform: translate(-50%, -50%);
+}
+
+h2 {
+  position: fixed;
+  top: 2px;
+  left: 2px;
+  margin: 0;
+  padding: 6px;
+  border: solid 1px #000;
+  background-color: #333;
+  color: #fff;
+  opacity: 1;
+  font-size: 0.938rem;
+  font-weight: 400;
+}
