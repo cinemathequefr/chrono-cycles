@@ -53,19 +53,20 @@ const options = {
     regulier: 7,
     pin: 2
   },
-  combine: false
+  combine: true
 };
 
 const dataUrl = [
-  "https://gist.githubusercontent.com/nltesown/e0992fae1cd70e5c2a764fb369ea6515/raw/9824ce2a8a2213dd9c4c79508278b24d42efcd8c/cycles.json",
-  "https://gist.githubusercontent.com/nltesown/e505dc0a525b66c4afb3900d61cda643/raw/6c48ef515b47b16b38c58a32cdce92cad32bd5c4/cycles_ext.json"
+  "https://gist.githubusercontent.com/nltesown/e0992fae1cd70e5c2a764fb369ea6515/raw/cycles.json",
+  "https://gist.githubusercontent.com/nltesown/e505dc0a525b66c4afb3900d61cda643/raw/cycles_ext.json"
 ];
 
 const temp = _.template(`
   <h2><%= curDate.startOf("day").format("dddd D MMM YYYY") %></h2>
   <a href="http://www.cinematheque.fr/cycle/<%= data[0][0].idCycleSite %>.html">
     <div class="cycle pinned">
-      <div class="title"><%= data[0][0].title %></div>
+    <div class="progress" style="width:<%= data[0][0].progress %>%;"></div>
+    <div class="title"><%= data[0][0].title %></div>
       <div class="dates"><%= datesConcat(data[0][0].dateFrom, data[0][0].dateTo) %></div>
       <% if (data[0][0].startsIn > 0) { %>
         <div class="soon">J-<%= data[0][0].startsIn  %></div>
@@ -76,6 +77,7 @@ const temp = _.template(`
   <% _.forEach(data[1], c => { %>
     <a href="http://www.cinematheque.fr/cycle/<%= c.idCycleSite %>.html">
       <div class="cycle<% if (!!c.surcycle) { %> permanent<% } %>">
+        <div class="progress" style="width:<%= c.progress %>%;"></div>
       <% if (c.surcycle) { %>
         <div class="surcycle"><%= c.surcycle %></div>
       <% } %>
@@ -89,11 +91,13 @@ const temp = _.template(`
   <%}); %>
 `);
 
-(async function () {
+(async function() {
   await domReady();
   let dataCycle = await fetchAsync(dataUrl[0]);
   let dataCycleExt = await fetchAsync(dataUrl[1]);
   let data = _.concat(dataCycle, dataCycleExt);
+
+  console.log("***", data);
 
   // Traitement initial des données : calcule la date de publication (théorique), transforme les dates en objets `moment`.
   data = _(data)
@@ -121,9 +125,12 @@ const temp = _.template(`
   function render() {
     $(".container").html(
       temp({
-        data: _.tap(currentData(data, curDate, options.lookaheadDays, options.combine), data => {
-          console.log(data)
-        }),
+        data: _.tap(
+          currentData(data, curDate, options.lookaheadDays, options.combine),
+          data => {
+            console.log(data);
+          }
+        ),
         curDate: curDate,
         datesConcat: datesConcat
       })
@@ -158,41 +165,76 @@ function currentData(data, currentDate, lookaheadDays, combine) {
   let temp = data;
 
   // 1. On retire les cycles terminés, les cycles non publiés et les cycles "lointains".
-  temp = _(temp).reject(
-      c =>
-      c.dateTo === null ? false : c.dateTo.isBefore(currentDate, "days") ||
-      c.pubDate.isAfter(currentDate, "days") ||
-      c.dateFrom.diff(currentDate, "days") > (c.isPonctuel ? (lookaheadDays.ponctuel || 0) : (lookaheadDays.regulier || 0))
+  temp = _(temp)
+    .reject(c =>
+      c.dateTo === null
+        ? false
+        : c.dateTo.isBefore(currentDate, "days") ||
+          c.pubDate.isAfter(currentDate, "days") ||
+          c.dateFrom.diff(currentDate, "days") >
+            (c.isPonctuel
+              ? lookaheadDays.ponctuel || 0
+              : lookaheadDays.regulier || 0)
     )
-    .sortBy(d => d.dateFrom).reverse() // Premier tri
+    .sortBy(d => d.dateFrom)
+    .reverse() // Premier tri
     .value();
 
   // 2. On complète avec le compte à rebours pour les cycles ponctuels
-  temp = _(temp).map(d => {
-    return _(d).thru(e => {
-      if (e.isPonctuel === true) {
-        return _(e).assign({
-          endsIn: d.dateFrom.diff(currentDate, "days"),
-          startsIn: d.dateFrom.diff(currentDate, "days")
-        }).value();
-      } else {
-        return e;
-      }
-    }).value();
-  }).value();
+  temp = _(temp)
+    .map(d => {
+      return _(d)
+        .thru(e => {
+          if (e.isPonctuel === true) {
+            return _(e)
+              .assign({
+                endsIn: d.dateFrom.diff(currentDate, "days"),
+                startsIn: d.dateFrom.diff(currentDate, "days")
+              })
+              .value();
+          } else {
+            return e;
+          }
+        })
+        .value();
+    })
+    .value();
+
+  // 2bis. On calcule le taux de progression
+  temp = _(temp)
+    .map(d => {
+      return _(d)
+        .assign({
+          progress: (() => {
+            if (d.dateTo === null) return 0;
+            return (
+              (d.dateFrom.diff(currentDate, "days") /
+                d.dateFrom.diff(d.dateTo, "days")) *
+              100
+            );
+          })()
+        })
+        .value();
+    })
+    .value();
 
   // 3. On isole le cycle à épingler (règle par défaut)
-  let pos = _(temp).findIndex(d => (d.isPonctuel === true) && ((d.dateFrom.diff(currentDate, "days") <= (lookaheadDays.pin || 0))));
+  let pos = _(temp).findIndex(
+    d =>
+      d.isPonctuel === true &&
+      d.dateFrom.diff(currentDate, "days") <= (lookaheadDays.pin || 0)
+  );
   let pin = temp.splice(pos, 1);
 
   // 4. En mode non combiné, on effectue un double tri (ponctuels, réguliers)
   if (options.combine === false) {
     temp = _(temp)
       .partition(d => d.isPonctuel === true)
-      .map(d => _(d)
-        .sortBy(e => e.dateFrom)
-        .reverse()
-        .value()
+      .map(d =>
+        _(d)
+          .sortBy(e => e.dateFrom)
+          .reverse()
+          .value()
       )
       .flatten()
       .value();
@@ -231,9 +273,9 @@ function datesConcat(a, b) {
       b.pop();
       datesConcat(a, b);
     }
-    return a.length === 0 ?
-      b2.join(" ") :
-      separators[0] + [a.join(" "), b2.join(" ")].join(separators[1]);
+    return a.length === 0
+      ? b2.join(" ")
+      : separators[0] + [a.join(" "), b2.join(" ")].join(separators[1]);
   }
 
   if (a && !b) {

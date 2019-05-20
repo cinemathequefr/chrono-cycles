@@ -23291,44 +23291,41 @@
     weekdaysShort: ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"]
   });
 
-  var today = hooks();
-  var curDate = today.clone();
+  var curDate = hooks().startOf("day");
 
   var options = {
     lookaheadDays: {
       ponctuel: 21,
-      regulier: 7,
+      regulier: 6, // = Tous les cycles d'un même surcycle (rdv régulier) ayant une séance jusqu'à cette date sont affichés
       pin: 2
     },
-    combine: false
+    regOrderByDate: true,
+    regOrder: [
+      // Ordre de tri des surcycles réguliers
+      "Aujourd'hui le cinéma",
+      "Cinéma bis",
+      "Ciné-club Jean Douchet",
+      "Cinéma d'avant-garde",
+      "Séances spéciales",
+      "Conservatoire des techniques",
+      "Fenêtre sur les collections",
+      "Parlons cinéma"
+    ],
+
+    combine: true // ?
   };
 
   var dataUrl = [
     "https://gist.githubusercontent.com/nltesown/e0992fae1cd70e5c2a764fb369ea6515/raw/cycles.json",
-    "https://gist.githubusercontent.com/nltesown/e505dc0a525b66c4afb3900d61cda643/raw/cycles_ext.json"
+    "https://gist.githubusercontent.com/nltesown/a310518cfa88cd52b13a55f3e737d75f/raw/cycles-ext-2.json"
   ];
 
-  var temp = lodash.template("\n  <h2><%= curDate.startOf(\"day\").format(\"dddd D MMM YYYY\") %></h2>\n  <a href=\"http://www.cinematheque.fr/cycle/<%= data[0][0].idCycleSite %>.html\">\n    <div class=\"cycle pinned\">\n    <div class=\"progress\" style=\"width:<%= data[0][0].progress %>%;\"></div>\n    <div class=\"title\"><%= data[0][0].title %></div>\n      <div class=\"dates\"><%= datesConcat(data[0][0].dateFrom, data[0][0].dateTo) %></div>\n      <% if (data[0][0].startsIn > 0) { %>\n        <div class=\"soon\">J-<%= data[0][0].startsIn  %></div>\n      <% } %>\n    </div>\n  </a>\n  <div class=\"cycle expo\"></div>\n  <% _.forEach(data[1], c => { %>\n    <a href=\"http://www.cinematheque.fr/cycle/<%= c.idCycleSite %>.html\">\n      <div class=\"cycle<% if (!!c.surcycle) { %> permanent<% } %>\">\n        <div class=\"progress\" style=\"width:<%= c.progress %>%;\"></div>\n      <% if (c.surcycle) { %>\n        <div class=\"surcycle\"><%= c.surcycle %></div>\n      <% } %>\n        <div class=\"title\"><%= c.title %></div>\n        <div class=\"dates\"><%= datesConcat(c.dateFrom, c.dateTo) %></div>\n        <% if (c.startsIn > 0) { %>\n          <div class=\"soon\">J-<%= c.startsIn  %></div>\n        <% } %>\n      </div>\n    </a>\n  <%}); %>\n");
+  var temp = lodash.template("\n  <% var pinData = data[0][0]; %>\n  <h2><%= curDate.startOf(\"day\").format(\"dddd D MMM YYYY\") %></h2>\n  <a href=\"http://www.cinematheque.fr/cycle/<%= pinData.idCycleSite %>.html\">\n    <div class=\"cycle pinned<% if (!!pinData.surcycle) { %> permanent<% } %>\">\n      <div class=\"progress\" style=\"width:<%= pinData.progress %>%;\"></div>\n      <% if (pinData.surcycle) { %>\n        <div class=\"surcycle\"><%= pinData.surcycle %></div>\n      <% } %>\n      <div class=\"title\"><%= pinData.title %></div>\n      <div class=\"dates\"><%= formatDate(pinData.date) %></div>\n      <% if (pinData.startsIn > 0) { %>\n        <div class=\"soon\">J-<%= pinData.startsIn  %></div>\n      <% } %>\n      <% if (pinData.startsIn === 0) { %>\n        <div class=\"soon\">Aujourd'hui</div>\n      <% } %>\n\n\n      </div>\n  </a>\n  <div class=\"cycle expo\"></div>\n  <% _.forEach(data[1], c => { %>\n    <a href=\"http://www.cinematheque.fr/cycle/<%= c.idCycleSite %>.html\">\n      <div class=\"cycle<% if (!!c.surcycle) { %> permanent<% } %>\">\n        <div class=\"progress\" style=\"width:<%= c.progress %>%;\"></div>\n      <% if (c.surcycle) { %>\n        <div class=\"surcycle\"><%= c.surcycle %></div>\n      <% } %>\n        <div class=\"title\"><%= c.title %></div>\n        <div class=\"dates\"><% if (c.dateFrom || c.dateTo) { %><%= datesConcat(moment(c.dateFrom).startOf(\"day\"), moment(c.dateTo).startOf(\"day\")) %><% } else { %><%= formatDate(c.date) %><% } %></div>  \n        <% if (c.startsIn > 0) { %>\n          <div class=\"soon\">J-<%= c.startsIn  %></div>\n        <% } %>\n        </div>\n    </a>\n  <%}); %>\n");
 
   (async function () {
     await domReady();
     var dataCycle = await fetchAsync(dataUrl[0]);
-    var dataCycleExt = await fetchAsync(dataUrl[1]);
-    var data = lodash.concat(dataCycle, dataCycleExt);
-
-    // Traitement initial des données : calcule la date de publication (théorique), transforme les dates en objets `moment`.
-    data = lodash(data)
-      .map(function (d) {
-        return lodash(d)
-          .assign({
-            isPonctuel: lodash.isUndefined(d.surcycle),
-            dateFrom: hooks(d.dateFrom),
-            dateTo: (function (a) { return (!!a ? hooks(a) : null); })(d.dateTo),
-            pubDate: pubDate(hooks(d.dateFrom))
-          })
-          .value();
-      })
-      .value();
+    var dataCycleReg = await fetchAsync(dataUrl[1]);
 
     $(".container")
       .on("wheel", function (e) {
@@ -23340,20 +23337,100 @@
       .trigger("wheel");
 
     function render() {
+      var o = prepDataCycleReg(
+        dataCycleReg,
+        options.lookaheadDays.regulier,
+        curDate
+      );
+
       $(".container").html(
         temp({
-          data: lodash.tap(
-            currentData(data, curDate, options.lookaheadDays, options.combine),
-            function (data) {
-              console.log(data);
-            }
-          ),
+          // data: _.tap(
+          //   currentData(data, curDate, options.lookaheadDays, options.combine),
+          //   data => {
+          //     console.log(data);
+          //   }
+          // ),
+          data: [
+            [
+              []
+            ],
+            o ],
           curDate: curDate,
-          datesConcat: datesConcat
+          datesConcat: datesConcat,
+          formatDate: formatDate,
+          moment: hooks
         })
       );
     }
   })();
+
+  function prepDataCycleReg(data, lookAheadDays, curDate) {
+    var o = lodash(data)
+      .mapValues(function (b) { return lodash(b)
+        .map(function (c) { return lodash({})
+          .assign(c, {
+            date: lodash(c.dates)
+              .sort()
+              .filter(
+                function (d) { return hooks(d)
+                .startOf("day")
+                .diff(curDate, "days") >= 0; }
+              )
+              .head() || null
+          })
+          .value(); }
+        )
+        .filter(function (c) { return !!c.date; })
+        .orderBy(function (c) { return c.date; })
+        .value(); }
+      )
+      .pickBy(function (b) { return b.length > 0; }) // On élimine les propriétés dont la valeur est un tableau vide
+      .mapValues(function (
+          b // Seconde itération mapValues pour retenir le (ou les) cycles à conserver dans le surcycle
+        ) { return lodash(b)
+        .reduce(function (acc, v, i) {
+          if (
+            i === 0 ||
+            hooks(v.date)
+            .startOf("day")
+            .diff(curDate, "days") <= lookAheadDays
+          ) {
+            return lodash(acc).concat(v);
+          } else {
+            return lodash(acc);
+          }
+        }, [])
+        .value(); }
+      )
+      .value();
+
+    // Transforme l'objet en tableau d'objets et nettoye les données inutiles
+    o = lodash(o)
+      .mapValues(function (v, k) { return lodash(v)
+        .map(function (a) { return lodash({})
+          .assign(a, {
+            surcycle: k,
+            date: hooks(a.date).startOf("day"),
+            startsIn: hooks(a.date)
+              .startOf("day")
+              .diff(curDate, "days")
+          })
+          .omit(["dates"])
+          .value(); }
+        )
+        .value(); }
+      )
+      .map()
+      .flatten()
+      .orderBy(function (a) { return a.date; }
+      )
+      .value();
+
+    console.log(o);
+
+    return o;
+  }
 
   function domReady() {
     return new Promise(function (resolve, reject) {
@@ -23368,86 +23445,8 @@
     return response.json();
   }
 
-  /**
-   * currentData
-   * Renvoie le sous-ensemble des cycles visibles à la date currentDate.
-   * @param {Array} data Données des cycles.
-   * @param {Object} currentDate Objet moment : date courante.
-   * @param {Object} lookaheadDays Nombre de jours avant la date de début d'un cycle à partir duquel il est annoncé. Par défaut, 0.
-   * @param {boolean} combine True: on combine dans la même chronologie cycles ponctuels et réguliers.
-   * @return {Array} Données filtrées.
-   */
-  function currentData(data, currentDate, lookaheadDays, combine) {
-    currentDate = currentDate.clone().startOf("day");
-    var temp = data;
-
-    // 1. On retire les cycles terminés, les cycles non publiés et les cycles "lointains".
-    temp = lodash(temp)
-      .reject(function (c) { return c.dateTo === null ?
-        false :
-        c.dateTo.isBefore(currentDate, "days") ||
-        c.pubDate.isAfter(currentDate, "days") ||
-        c.dateFrom.diff(currentDate, "days") >
-        (c.isPonctuel ?
-          lookaheadDays.ponctuel || 0 :
-          lookaheadDays.regulier || 0); }
-      )
-      .sortBy(function (d) { return d.dateFrom; })
-      .reverse() // Premier tri
-      .value();
-
-    // 2. On complète avec le compte à rebours pour les cycles ponctuels
-    temp = lodash(temp)
-      .map(function (d) {
-        return lodash(d)
-          .thru(function (e) {
-            if (e.isPonctuel === true) {
-              return lodash(e)
-                .assign({
-                  endsIn: d.dateFrom.diff(currentDate, "days"),
-                  startsIn: d.dateFrom.diff(currentDate, "days")
-                })
-                .value();
-            } else {
-              return e;
-            }
-          })
-          .value();
-      })
-      .value();
-
-    // 2bis. On calcule le taux de progression
-    temp = lodash(temp)
-      .map(function (d) {
-        return lodash(d).assign({
-          progress: (function () {
-            if (d.dateTo === null) { return 0; }
-            return (d.dateFrom.diff(currentDate, "days") / d.dateFrom.diff(d.dateTo, "days")) * 100;
-          })()
-        }).value();
-      })
-      .value();
-
-    // 3. On isole le cycle à épingler (règle par défaut)
-    var pos = lodash(temp).findIndex(
-      function (d) { return d.isPonctuel === true &&
-      d.dateFrom.diff(currentDate, "days") <= (lookaheadDays.pin || 0); }
-    );
-    var pin = temp.splice(pos, 1);
-
-    // 4. En mode non combiné, on effectue un double tri (ponctuels, réguliers)
-    {
-      temp = lodash(temp)
-        .partition(function (d) { return d.isPonctuel === true; })
-        .map(function (d) { return lodash(d)
-          .sortBy(function (e) { return e.dateFrom; })
-          .reverse()
-          .value(); }
-        )
-        .flatten()
-        .value();
-    }
-    return [pin, temp];
+  function formatDate(a) {
+    return hooks.isMoment(a) ? a.format("ddd D MMMM YYYY") : a;
   }
 
   /**
@@ -23464,6 +23463,9 @@
   function datesConcat(a, b) {
     a = hooks.isMoment(a) ? a.format("D MMMM YYYY") : null;
     b = hooks.isMoment(b) ? b.format("D MMMM YYYY") : null;
+
+    console.log(a, b);
+
     var separators = ["Du ", " au ", "À partir du ", "Jusqu'au ", ""];
 
     if (a === b) {
@@ -23491,6 +23493,227 @@
     }
   }
 
+  /*
+  const temp = _.template(`
+    <h2><%= curDate.startOf("day").format("dddd D MMM YYYY") %></h2>
+    <a href="http://www.cinematheque.fr/cycle/<%= data[0][0].idCycleSite %>.html">
+      <div class="cycle pinned">
+      <div class="progress" style="width:<%= data[0][0].progress %>%;"></div>
+      <div class="title"><%= data[0][0].title %></div>
+        <div class="dates"><%= datesConcat(data[0][0].dateFrom, data[0][0].dateTo) %></div>
+        <% if (data[0][0].startsIn > 0) { %>
+          <div class="soon">J-<%= data[0][0].startsIn  %></div>
+        <% } %>
+      </div>
+    </a>
+    <div class="cycle expo"></div>
+    <% _.forEach(data[1], c => { %>
+      <a href="http://www.cinematheque.fr/cycle/<%= c.idCycleSite %>.html">
+        <div class="cycle<% if (!!c.surcycle) { %> permanent<% } %>">
+          <div class="progress" style="width:<%= c.progress %>%;"></div>
+        <% if (c.surcycle) { %>
+          <div class="surcycle"><%= c.surcycle %></div>
+        <% } %>
+          <div class="title"><%= c.title %></div>
+          <div class="dates"><%= datesConcat(c.dateFrom, c.dateTo) %></div>
+          <% if (c.startsIn > 0) { %>
+            <div class="soon">J-<%= c.startsIn  %></div>
+          <% } %>
+        </div>
+      </a>
+    <%}); %>
+  `);
+
+  (async function () {
+    await domReady();
+    let dataCycle = await fetchAsync(dataUrl[0]);
+    let dataCycleExt = await fetchAsync(dataUrl[1]);
+    let data = _.concat(dataCycle, dataCycleExt);
+
+    console.log("***", data);
+
+    // Traitement initial des données : calcule la date de publication (théorique), transforme les dates en objets `moment`.
+    data = _(data)
+      .map(d => {
+        return _(d)
+          .assign({
+            isPonctuel: _.isUndefined(d.surcycle),
+            dateFrom: moment(d.dateFrom),
+            dateTo: (a => (!!a ? moment(a) : null))(d.dateTo),
+            pubDate: pubDate(moment(d.dateFrom))
+          })
+          .value();
+      })
+      .value();
+
+    $(".container")
+      .on("wheel", e => {
+        let delta = e.deltaY / 3;
+        curDate.add(delta, "day");
+        render();
+        e.preventDefault();
+      })
+      .trigger("wheel");
+
+    function render() {
+      $(".container").html(
+        temp({
+          data: _.tap(
+            currentData(data, curDate, options.lookaheadDays, options.combine),
+            data => {
+              console.log(data);
+            }
+          ),
+          curDate: curDate,
+          datesConcat: datesConcat
+        })
+      );
+    }
+  })();
+
+  function domReady() {
+    return new Promise((resolve, reject) => {
+      document.addEventListener("DOMContentLoaded", () => {
+        return resolve();
+      });
+    });
+  }
+
+  async function fetchAsync(url) {
+    let response = await fetch(url);
+    return response.json();
+  }
+
+  /**
+   * currentData
+   * Renvoie le sous-ensemble des cycles visibles à la date currentDate.
+   * @param {Array} data Données des cycles.
+   * @param {Object} currentDate Objet moment : date courante.
+   * @param {Object} lookaheadDays Nombre de jours avant la date de début d'un cycle à partir duquel il est annoncé. Par défaut, 0.
+   * @param {boolean} combine True: on combine dans la même chronologie cycles ponctuels et réguliers.
+   * @return {Array} Données filtrées.
+   */
+  /*
+  function currentData(data, currentDate, lookaheadDays, combine) {
+    currentDate = currentDate.clone().startOf("day");
+    let temp = data;
+
+    // 1. On retire les cycles terminés, les cycles non publiés et les cycles "lointains".
+    temp = _(temp)
+      .reject(c =>
+        c.dateTo === null ?
+        false :
+        c.dateTo.isBefore(currentDate, "days") ||
+        c.pubDate.isAfter(currentDate, "days") ||
+        c.dateFrom.diff(currentDate, "days") >
+        (c.isPonctuel ?
+          lookaheadDays.ponctuel || 0 :
+          lookaheadDays.regulier || 0)
+      )
+      .sortBy(d => d.dateFrom)
+      .reverse() // Premier tri
+      .value();
+
+    // 2. On complète avec le compte à rebours pour les cycles ponctuels
+    temp = _(temp)
+      .map(d => {
+        return _(d)
+          .thru(e => {
+            if (e.isPonctuel === true) {
+              return _(e)
+                .assign({
+                  endsIn: d.dateFrom.diff(currentDate, "days"),
+                  startsIn: d.dateFrom.diff(currentDate, "days")
+                })
+                .value();
+            } else {
+              return e;
+            }
+          })
+          .value();
+      })
+      .value();
+
+    // 2bis. On calcule le taux de progression
+    temp = _(temp)
+      .map(d => {
+        return _(d).assign({
+          progress: (() => {
+            if (d.dateTo === null) return 0;
+            return (d.dateFrom.diff(currentDate, "days") / d.dateFrom.diff(d.dateTo, "days")) * 100;
+          })()
+        }).value();
+      })
+      .value();
+
+    // 3. On isole le cycle à épingler (règle par défaut)
+    let pos = _(temp).findIndex(
+      d =>
+      d.isPonctuel === true &&
+      d.dateFrom.diff(currentDate, "days") <= (lookaheadDays.pin || 0)
+    );
+    let pin = temp.splice(pos, 1);
+
+    // 4. En mode non combiné, on effectue un double tri (ponctuels, réguliers)
+    if (options.combine === false) {
+      temp = _(temp)
+        .partition(d => d.isPonctuel === true)
+        .map(d =>
+          _(d)
+          .sortBy(e => e.dateFrom)
+          .reverse()
+          .value()
+        )
+        .flatten()
+        .value();
+    }
+    return [pin, temp];
+  }
+  */
+
+  /**
+   * datesConcat
+   * @description
+   * Concaténation intelligente de dates de début / date de fin.
+   * @example
+   * ["1", "jan", "2016"], ["31", "déc", "2016"] => "1 jan-31 déc 2016"
+   * @param {Object|null} a Objet moment : date de début. (NOTE : Actuellement, ne prend pas en compte les cas où la date de début se serait pas fourni.)
+   * @param {Objet|null} b Objet moment ou valeur `null` : date de fin.
+   * @returns {string} Chaîne des deux dates concaténées.
+   * @todo Pouvoir passer `separators` en paramètre.
+   */
+  /*
+  function datesConcat(a, b) {
+    a = moment.isMoment(a) ? a.format("D MMMM YYYY") : null;
+    b = moment.isMoment(b) ? b.format("D MMMM YYYY") : null;
+    let separators = ["Du ", " au ", "À partir du ", "Jusqu'au ", ""];
+
+    if (a === b) {
+      return separators[4] + a;
+    }
+
+    if (a && b) {
+      a = a.split(" ");
+      b = b.split(" ");
+      let b2 = _.clone(b);
+      let i = a.length - 1;
+      if (a[i] === b[i] && i > -1) {
+        i--;
+        a.pop();
+        b.pop();
+        datesConcat(a, b);
+      }
+      return a.length === 0 ?
+        b2.join(" ") :
+        separators[0] + [a.join(" "), b2.join(" ")].join(separators[1]);
+    }
+
+    if (a && !b) {
+      return separators[2] + a;
+    }
+  }
+  */
+
   /**
    * pubDate
    * @description
@@ -23499,6 +23722,7 @@
    * @param {Object} dateFrom Objet moment
    * @returns {Object} Objet moment
    */
+  /*
   function pubDate(dateFrom) {
     return dateFrom
       .clone()
@@ -23507,5 +23731,6 @@
       .date(20)
       .startOf("day");
   }
+  */
 
 }());

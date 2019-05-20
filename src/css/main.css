@@ -23,7 +23,8 @@ body {
   box-sizing: border-box;
 }
 
-.cycle.pinned {
+.cycle.pinned,
+.cycle.pinned.permanent {
   width: calc(66.66% - 4px);
   background-color: #936;
   height: 400px;

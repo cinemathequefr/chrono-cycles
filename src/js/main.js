@@ -44,23 +44,274 @@ moment.locale("fr", {
   weekdaysShort: ["Dim", "Lun", "Mar", "Mer", "Jeu", "Ven", "Sam"]
 });
 
-const today = moment();
-let curDate = today.clone();
+let curDate = moment().startOf("day");
 
 const options = {
   lookaheadDays: {
     ponctuel: 21,
-    regulier: 7,
+    regulier: 6, // = Tous les cycles d'un même surcycle (rdv régulier) ayant une séance jusqu'à cette date sont affichés
     pin: 2
   },
-  combine: false
+  regOrderByDate: true,
+  regOrder: [
+    // Ordre de tri des surcycles réguliers
+    "Aujourd'hui le cinéma",
+    "Cinéma bis",
+    "Ciné-club Jean Douchet",
+    "Cinéma d'avant-garde",
+    "Séances spéciales",
+    "Conservatoire des techniques",
+    "Fenêtre sur les collections",
+    "Parlons cinéma"
+  ],
+
+  combine: true // ?
 };
 
 const dataUrl = [
   "https://gist.githubusercontent.com/nltesown/e0992fae1cd70e5c2a764fb369ea6515/raw/cycles.json",
-  "https://gist.githubusercontent.com/nltesown/e505dc0a525b66c4afb3900d61cda643/raw/cycles_ext.json"
+  "https://gist.githubusercontent.com/nltesown/a310518cfa88cd52b13a55f3e737d75f/raw/cycles-ext-2.json"
 ];
 
+const temp = _.template(`
+  <% var pinData = data[0][0]; %>
+  <h2><%= curDate.startOf("day").format("dddd D MMM YYYY") %></h2>
+  <a href="http://www.cinematheque.fr/cycle/<%= pinData.idCycleSite %>.html">
+    <div class="cycle pinned<% if (!!pinData.surcycle) { %> permanent<% } %>">
+      <div class="progress" style="width:<%= pinData.progress %>%;"></div>
+      <% if (pinData.surcycle) { %>
+        <div class="surcycle"><%= pinData.surcycle %></div>
+      <% } %>
+      <div class="title"><%= pinData.title %></div>
+      <div class="dates"><%= formatDate(pinData.date) %></div>
+      <% if (pinData.startsIn > 0) { %>
+        <div class="soon">J-<%= pinData.startsIn  %></div>
+      <% } %>
+      <% if (pinData.startsIn === 0) { %>
+        <div class="soon">Aujourd'hui</div>
+      <% } %>
+
+
+      </div>
+  </a>
+  <div class="cycle expo"></div>
+  <% _.forEach(data[1], c => { %>
+    <a href="http://www.cinematheque.fr/cycle/<%= c.idCycleSite %>.html">
+      <div class="cycle<% if (!!c.surcycle) { %> permanent<% } %>">
+        <div class="progress" style="width:<%= c.progress %>%;"></div>
+      <% if (c.surcycle) { %>
+        <div class="surcycle"><%= c.surcycle %></div>
+      <% } %>
+        <div class="title"><%= c.title %></div>
+        <div class="dates"><% if (c.dateFrom || c.dateTo) { %><%= datesConcat(moment(c.dateFrom).startOf("day"), moment(c.dateTo).startOf("day")) %><% } else { %><%= formatDate(c.date) %><% } %></div>  
+        <% if (c.startsIn > 0) { %>
+          <div class="soon">J-<%= c.startsIn  %></div>
+        <% } %>
+        </div>
+    </a>
+  <%}); %>
+`);
+
+(async function () {
+  await domReady();
+  let dataCycle = await fetchAsync(dataUrl[0]);
+  let dataCycleReg = await fetchAsync(dataUrl[1]);
+
+  $(".container")
+    .on("wheel", e => {
+      let delta = e.deltaY / 3;
+      curDate.add(delta, "day");
+      render();
+      e.preventDefault();
+    })
+    .trigger("wheel");
+
+  function render() {
+    let o = prepDataCycleReg(
+      dataCycleReg,
+      options.lookaheadDays.regulier,
+      curDate
+    );
+
+    $(".container").html(
+      temp({
+        // data: _.tap(
+        //   currentData(data, curDate, options.lookaheadDays, options.combine),
+        //   data => {
+        //     console.log(data);
+        //   }
+        // ),
+        data: [
+          [
+            []
+          ],
+          o
+          // [_.first(o)], _.tail(o)
+        ],
+        curDate: curDate,
+        datesConcat: datesConcat,
+        formatDate: formatDate,
+        moment: moment
+      })
+    );
+  }
+})();
+
+function prepDataCycleReg(data, lookAheadDays, curDate) {
+  let o = _(data)
+    .mapValues(b =>
+      _(b)
+      .map(c =>
+        _({})
+        .assign(c, {
+          date: _(c.dates)
+            .sort()
+            .filter(
+              d =>
+              moment(d)
+              .startOf("day")
+              .diff(curDate, "days") >= 0
+            )
+            .head() || null
+        })
+        .value()
+      )
+      .filter(c => !!c.date)
+      .orderBy(c => c.date)
+      .value()
+    )
+    .pickBy(b => b.length > 0) // On élimine les propriétés dont la valeur est un tableau vide
+    .mapValues((
+        b // Seconde itération mapValues pour retenir le (ou les) cycles à conserver dans le surcycle
+      ) =>
+      _(b)
+      .reduce((acc, v, i) => {
+        if (
+          i === 0 ||
+          moment(v.date)
+          .startOf("day")
+          .diff(curDate, "days") <= lookAheadDays
+        ) {
+          return _(acc).concat(v);
+        } else {
+          return _(acc);
+        }
+      }, [])
+      .value()
+    )
+    .value();
+
+  // Transforme l'objet en tableau d'objets et nettoye les données inutiles
+  o = _(o)
+    .mapValues((v, k) =>
+      _(v)
+      .map(a =>
+        _({})
+        .assign(a, {
+          surcycle: k,
+          date: moment(a.date).startOf("day"),
+          startsIn: moment(a.date)
+            .startOf("day")
+            .diff(curDate, "days")
+        })
+        .omit(["dates"])
+        .value()
+      )
+      .value()
+    )
+    .map()
+    .flatten()
+    .orderBy(a =>
+      !!options.regOrderByDate ?
+      a.date :
+      _.indexOf(options.regOrder, a.surcycle)
+    )
+    .value();
+
+  console.log(o);
+
+  return o;
+}
+
+function domReady() {
+  return new Promise((resolve, reject) => {
+    document.addEventListener("DOMContentLoaded", () => {
+      return resolve();
+    });
+  });
+}
+
+async function fetchAsync(url) {
+  let response = await fetch(url);
+  return response.json();
+}
+
+function formatDate(a) {
+  return moment.isMoment(a) ? a.format("ddd D MMMM YYYY") : a;
+}
+
+/**
+ * datesConcat
+ * @description
+ * Concaténation intelligente de dates de début / date de fin.
+ * @example
+ * ["1", "jan", "2016"], ["31", "déc", "2016"] => "1 jan-31 déc 2016"
+ * @param {Object|null} a Objet moment : date de début. (NOTE : Actuellement, ne prend pas en compte les cas où la date de début se serait pas fourni.)
+ * @param {Objet|null} b Objet moment ou valeur `null` : date de fin.
+ * @returns {string} Chaîne des deux dates concaténées.
+ * @todo Pouvoir passer `separators` en paramètre.
+ */
+function datesConcat(a, b) {
+  a = moment.isMoment(a) ? a.format("D MMMM YYYY") : null;
+  b = moment.isMoment(b) ? b.format("D MMMM YYYY") : null;
+
+  console.log(a, b);
+
+  let separators = ["Du ", " au ", "À partir du ", "Jusqu'au ", ""];
+
+  if (a === b) {
+    return separators[4] + a;
+  }
+
+  if (a && b) {
+    a = a.split(" ");
+    b = b.split(" ");
+    let b2 = _.clone(b);
+    let i = a.length - 1;
+    if (a[i] === b[i] && i > -1) {
+      i--;
+      a.pop();
+      b.pop();
+      datesConcat(a, b);
+    }
+    return a.length === 0 ?
+      b2.join(" ") :
+      separators[0] + [a.join(" "), b2.join(" ")].join(separators[1]);
+  }
+
+  if (a && !b) {
+    return separators[2] + a;
+  }
+}
+
+/**
+ * pubDate
+ * @description
+ * Calcule à partir de la date de début d'un cycle sa date théorique de publication,
+ * le 20 du mois précédant le début d'un trimestre de programme (mars, juin, septembre, décembre).
+ * @param {Object} dateFrom Objet moment
+ * @returns {Object} Objet moment
+ */
+function pubDate(dateFrom) {
+  return dateFrom
+    .clone()
+    .year(dateFrom.year() - (dateFrom.month() < 2 ? 1 : 0))
+    .month([12, 12, 3, 3, 3, 6, 6, 6, 9, 9, 9, 12][dateFrom.month()] - 2)
+    .date(20)
+    .startOf("day");
+}
+
+/*
 const temp = _.template(`
   <h2><%= curDate.startOf("day").format("dddd D MMM YYYY") %></h2>
   <a href="http://www.cinematheque.fr/cycle/<%= data[0][0].idCycleSite %>.html">
@@ -96,6 +347,8 @@ const temp = _.template(`
   let dataCycle = await fetchAsync(dataUrl[0]);
   let dataCycleExt = await fetchAsync(dataUrl[1]);
   let data = _.concat(dataCycle, dataCycleExt);
+
+  console.log("***", data);
 
   // Traitement initial des données : calcule la date de publication (théorique), transforme les dates en objets `moment`.
   data = _(data)
@@ -158,6 +411,7 @@ async function fetchAsync(url) {
  * @param {boolean} combine True: on combine dans la même chronologie cycles ponctuels et réguliers.
  * @return {Array} Données filtrées.
  */
+/*
 function currentData(data, currentDate, lookaheadDays, combine) {
   currentDate = currentDate.clone().startOf("day");
   let temp = data;
@@ -233,6 +487,7 @@ function currentData(data, currentDate, lookaheadDays, combine) {
   }
   return [pin, temp];
 }
+*/
 
 /**
  * datesConcat
@@ -245,6 +500,7 @@ function currentData(data, currentDate, lookaheadDays, combine) {
  * @returns {string} Chaîne des deux dates concaténées.
  * @todo Pouvoir passer `separators` en paramètre.
  */
+/*
 function datesConcat(a, b) {
   a = moment.isMoment(a) ? a.format("D MMMM YYYY") : null;
   b = moment.isMoment(b) ? b.format("D MMMM YYYY") : null;
@@ -274,6 +530,7 @@ function datesConcat(a, b) {
     return separators[2] + a;
   }
 }
+*/
 
 /**
  * pubDate
@@ -283,6 +540,7 @@ function datesConcat(a, b) {
  * @param {Object} dateFrom Objet moment
  * @returns {Object} Objet moment
  */
+/*
 function pubDate(dateFrom) {
   return dateFrom
     .clone()
@@ -291,3 +549,4 @@ function pubDate(dateFrom) {
     .date(20)
     .startOf("day");
 }
+*/
