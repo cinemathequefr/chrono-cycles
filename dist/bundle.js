@@ -23328,6 +23328,7 @@
     var dataCycleReg = await fetchAsync(dataUrl[1]);
 
     $("#regbydate").prop("checked", options.regOrderByDate);
+    $("#reglookaheaddays").prop("value", options.lookaheadDays.regulier);
     render();
 
 
@@ -23344,6 +23345,11 @@
 
     $("#regbydate").on("click", function (e) {
       options.regOrderByDate = e.target.checked;
+      render();
+    });
+
+    $("#reglookaheaddays").on("change", function (e) {
+      options.lookaheadDays.regulier = parseInt(e.target.value, 10);
       render();
     });
 

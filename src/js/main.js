@@ -118,6 +118,7 @@ const temp = _.template(`
   let dataCycleReg = await fetchAsync(dataUrl[1]);
 
   $("#regbydate").prop("checked", options.regOrderByDate);
+  $("#reglookaheaddays").prop("value", options.lookaheadDays.regulier);
   render();
 
 
@@ -134,6 +135,11 @@ const temp = _.template(`
 
   $("#regbydate").on("click", e => {
     options.regOrderByDate = e.target.checked;
+    render();
+  });
+
+  $("#reglookaheaddays").on("change", e => {
+    options.lookaheadDays.regulier = parseInt(e.target.value, 10);
     render();
   });
 

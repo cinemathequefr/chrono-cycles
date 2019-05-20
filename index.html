@@ -10,8 +10,25 @@
 </head>
 
 <body>
-  <label style="position: absolute; top: 0; right: 0;"><input type="checkbox" name="regbydate" id="regbydate">Trier les
-    rdv réguliers par date</label>
+
+
+  <div class="params" style="position: absolute; top: 0; right: 0;">
+    <label>Anticipation rdv réguliers (jours)<select name="reglookaheaddays" id="reglookaheaddays">
+        <option value="0">0</option>
+        <option value="6">6</option>
+        <option value="7">7</option>
+        <option value="14">14</option>
+        <option value="21">21</option>
+        <option value="30">30</option>
+        <option value="60">60</option>
+      </select></label>
+    <label><input type="checkbox" name="regbydate" id="regbydate">Trier
+      les
+      rdv réguliers par date</label>
+  </div>
+
+
+
   <div class="container">
 
 
