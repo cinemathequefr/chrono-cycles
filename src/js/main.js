@@ -52,7 +52,7 @@ const options = {
     regulier: 6, // = Tous les cycles d'un même surcycle (rdv régulier) ayant une séance jusqu'à cette date sont affichés
     pin: 2
   },
-  regOrderByDate: true,
+  regOrderByDate: false, // false: tri fixe des surcycles, true: tri des surcycles par date
   regOrder: [
     // Ordre de tri des surcycles réguliers
     "Aujourd'hui le cinéma",
@@ -117,6 +117,11 @@ const temp = _.template(`
   let dataCycle = await fetchAsync(dataUrl[0]);
   let dataCycleReg = await fetchAsync(dataUrl[1]);
 
+  $("#regbydate").prop("checked", options.regOrderByDate);
+  render();
+
+
+
   $(".container")
     .on("wheel", e => {
       let delta = e.deltaY / 3;
@@ -125,6 +130,12 @@ const temp = _.template(`
       e.preventDefault();
     })
     .trigger("wheel");
+
+
+  $("#regbydate").on("click", e => {
+    options.regOrderByDate = e.target.checked;
+    render();
+  });
 
   function render() {
     let o = prepDataCycleReg(
@@ -228,8 +239,6 @@ function prepDataCycleReg(data, lookAheadDays, curDate) {
     )
     .value();
 
-  console.log(o);
-
   return o;
 }
 
@@ -264,8 +273,6 @@ function formatDate(a) {
 function datesConcat(a, b) {
   a = moment.isMoment(a) ? a.format("D MMMM YYYY") : null;
   b = moment.isMoment(b) ? b.format("D MMMM YYYY") : null;
-
-  console.log(a, b);
 
   let separators = ["Du ", " au ", "À partir du ", "Jusqu'au ", ""];
 
