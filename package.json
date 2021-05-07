@@ -23,7 +23,7 @@
     "rollup-plugin-uglify": "^6.0.0"
   },
   "dependencies": {
-    "lodash": "^4.17.11",
+    "lodash": "^4.17.21",
     "moment": "^2.22.2",
     "normalize.css": "^8.0.1"
   }
